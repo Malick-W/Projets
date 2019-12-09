@@ -1,5 +1,5 @@
-path_Conso = "/users/mmath/wade/Bureau/Projets_Malick_fayad/Series_Chrono_Malick_fayad/projet/Conso.RData"
-path_Temp = "/users/mmath/wade/Bureau/Projets_Malick_fayad/Series_Chrono_Malick_fayad/projet/Temp.RData"
+path_Conso = "/users/mmath/wade/Bureau/Projets/Projets/Series_Chrono/projet/Conso.RData"
+path_Temp = "/users/mmath/wade/Bureau/Projets/Projets/Series_Chrono/projet/Temp.RData"
 
 load(path_Conso)
 load(path_Temp)
