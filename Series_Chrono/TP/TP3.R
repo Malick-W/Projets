@@ -121,3 +121,4 @@ outilsNormalite(Res)
 outilsBlancheur(Res, 20)
 Box.test(Res, lag=3, type="Ljung-Box")
 shapiro.test(Res)
+

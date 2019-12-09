@@ -4,7 +4,7 @@ library("aTSA")
 library("forecast")
 
 # ouverture du fichier
-Strates = read.csv("strates.txt")$Strates
+Strates = read.csv("/users/mmath/wade/Bureau/Projets/Projets/Series_Chrono/TP/strates.txt")$Strates
 n = length(Strates)
 
 # aspect visuel : transformation necessaire
