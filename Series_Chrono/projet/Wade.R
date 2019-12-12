@@ -1,213 +1,368 @@
+#On visualizer les donnees
+library(tseries)
+library(forecast)
+library(Metrics)
+library(ftsa)
+library(dLagM)
+library(statsr)
+
 path_Conso = "/users/mmath/wade/Bureau/Projets/Projets/Series_Chrono/projet/Conso.RData"
 path_Temp = "/users/mmath/wade/Bureau/Projets/Projets/Series_Chrono/projet/Temp.RData"
 
-load(path_Conso)
-load(path_Temp)
+load("Conso.RData")
+load("Temp.RData")
 
+Conso = Conso[-c(1:35064)]
+Temp = Temp[-c(1:35064)]
+n = length(Conso)
+
+# aspect visuel : transformation necessaire
+# le log (possible car >0) appaisera les pics, harmonisera la variance, reduira l'echelle des donnees
+plot(1:n, Conso, type="l", col="blue", xlab="Temps", ylab="Conso")
 LConso = log(Conso)
+plot(1:n, LConso, type="l", col="blue", xlab="Temps", ylab="Conso logarithmiques")
+plot(Temp, LConso, xlab="temperature", ylab="Conso")
 
-# trace des donnees
-plot(Conso, type="l", xlab="temps(Heure)", ylab="Consommation")
-plot(LConso, type="l", xlab="temps(Heure)", ylab="Log_Consommation")
-
-# trace des donnees
-plot(Temp, type="l",xlim=c(1,96), xlab="temps(Heure)", ylab="TempÃ©rature")
-
-
-plot(Temp[1:1500], Conso[1:1500], main="The Sine Function", xlab="temp(Heure)", ylab="Conso")
-
-
-# objectif : modeliser la serie logarithmique par un modele additif et effectuer une prediction sur l'annee suivante
-
-# autocorrelations empiriques de la series
-acf(Conso, main="ACF empirique")
-
-# notre choix se porte sur une periode de 12
-# (une periode de 6 peut etre retenue mais l'experience montre qu'elle ne permet pas de rendre la serie aperiodique)
-tau = 24
-m = tau/2
-nsup = length(Conso)%%tau
-n = length(Conso)-nsup # on se ramene a un nombre entier de periodes (a eviter lorsque les donnees sont rares)
-ResConso = Conso[(n+1):length(Conso)]
-Conso = Conso[1:n]
-ResConso = Conso[(n+1):(n+nsup)]
-Conso = Conso[1:n]
-
-# filtrage par moyenne mobile arithmetique modifiee d'ordre 6
-MMConso = rep(0, n-2*m)
-for (i in 1:(n-2*m)){
-  MMConso[i] = (Conso[i] + Conso[i+2*m])/(4*m) + sum(Conso[(i+1):(i+2*m-1)])/(2*m)
+# une representation graphique superposant la serie avec une moyenne lissee (fenetre de 100)
+fen = 100
+LConsoLiss = rep(0, n-fen)
+for (i in 1:(n-fen)){
+  LConsoLiss[i] = mean(LConso[i:(i+fen)])
 }
+plot(1:n, LConso, type="l", col="blue", xlab="Temps", ylab="Conso logarithmiques")
+lines((fen/2+1):(n-fen/2), LConsoLiss, col="red", type="p")
+# clairement, esperance non constante, confirmation de la non stationnarite
 
-# representation de la serie filtree : elle est visuellement aperiodique
-plot(MMConso, type="l", xlab="t", ylab="Log Ventes apres moyenne mobile")
+# pour les tests ADF et KPSS, on se contente ici de Type 1
 
-# il existe manifestement une tendance, pour l'estimer on retient 4 modeles :
-# - M1 : une regression lineaire sur {1, t, t^2} pour la forme parabolique, estimee sans memoire du bruit (OLS)
-# - M2 : une regression lineaire sur {1, t}, estimee sans memoire du bruit (OLS)
-# - M3 : une regression lineaire sur {1, t, t^2}, estimee avec un bruit a courte memoire (GLS-MA(1))
-# - M4 : une regression lineaire sur {1, t, t^2}, estimee avec un bruit a longue memoire (GLS-AR(1))
+kpss.test(LConso) # KPSS (Type 1) : non stationnaire
+adf.test(LConso) # ADF (Type 1) : stationnaire ???
 
-# espace des temps observables (prive des m premieres et dernieres valeurs)
-Tps = 1:(n-2*m)
-Tps2 = Tps^2
 
-# M1
-RegLinM1 = lm(MMConso ~ 1+Tps+Tps2)
-summary(RegLinM1)
-b0M1 = RegLinM1$coefficients[1]
-b1M1 = RegLinM1$coefficients[2]
-b2M1 = RegLinM1$coefficients[3]
-lines(b0M1 + b1M1*Tps + b2M1*Tps2, type="l", col="red")
+acf(Conso)
+freq = 24
 
-# M2
-RegLinM2 = lm(MMConso ~ 1+Tps)
-summary(RegLinM2)
-b0M2 = RegLinM2$coefficients[1]
-b1M2 = RegLinM2$coefficients[2]
-lines(b0M2 + b1M2*Tps, type="l", col="blue")
+#On definie la serie chrono
+SY = ts(LConso, frequency=freq)
+# decompose la serie entre la tendance, saisonalite et bruit
+sx = decompose(SY)
+plot(sx)
 
-# package pour les GLS
-library("nlme")
+#Pour faire la prediction on pourra utiliser la tendance.
+#Construire un model sur la tendance qui nous permettra a faire la prediction.
+#on extrait le bruit blanc  et on teste la stationnarite des bruit
 
-# M3
-RegLinGenM3 = gls(MMConso ~ 1+Tps+Tps2, correlation = corARMA(p=0, q=1))
-b0M3 = RegLinGenM3$coefficients[1]
-b1M3 = RegLinGenM3$coefficients[2]
-b2M3 = RegLinGenM3$coefficients[3]
-lines(b0M3 + b1M3*Tps + b2M3*Tps2, type="l", col="magenta")
+Res = sx$random
+Res = Res[!is.na(Res)]
 
-# M4
-RegLinGenM4 = gls(MMConso ~ 1+Tps+Tps2, correlation = corARMA(p=1, q=0))
-b0M4 = RegLinGenM4$coefficients[1]
-b1M4 = RegLinGenM4$coefficients[2]
-b2M4 = RegLinGenM4$coefficients[3]
-lines(b0M4 + b1M4*Tps + b2M4*Tps2, type="l", col="forestgreen")
+kpss.test(Res) # On constate que p= 0.1, KPSS indique la fluc est stationnaire
+adf.test(Res) # on constate aussi p =0.01, adf indique  la fluc est stationnaire
 
-# pour chacun des modeles, on recupere l'estimation de la tendance sur tout l'espace des temps
-EstM1 = b0M1 + b1M1*(1:n) + b2M1*(1:n)^2
-EstM2 = b0M2 + b1M2*(1:n)
-EstM3 = b0M3 + b1M3*(1:n) + b2M3*(1:n)^2
-EstM4 = b0M4 + b1M4*(1:n) + b2M4*(1:n)^2
+# structure de correlation dans les residus : clairement ce n'est pas un bruit blanc
+acf(Res, main="ACF des residus") 
+pacf(Res, main="PACF des residus")
 
-# superposition du signal et de la tendance estimee
-plot(Conso, type="l", xlab="t", ylab="Log Ventes")
-lines(EstM1, type="l", col="red")
-lines(EstM2, type="l", col="blue")
-lines(EstM3, type="l", col="magenta")
-lines(EstM4, type="l", col="forestgreen")
+# On s'intéressa dans la suite à construire un modèle ARMA d'ordre p et q du bruit.
 
-# recuperation du signal prive de sa tendance, pour estimer la saisonnalite
-SaisM1 = Conso - EstM1
-SaisM2 = Conso - EstM2
-SaisM3 = Conso - EstM3
-SaisM4 = Conso - EstM4
+# Arm1 = Arima(Res, order = c(2, 0,2), include.mean = FALSE)
+# Arm2 = Arima(Res, order = c(2, 0,4), include.mean = FALSE) 
+# Arm3 = Arima(Res, order = c(1, 0,3), include.mean = FALSE)
+# Arm4 = Arima(Res, order = c(1, 0,2), include.mean = FALSE)
+# Arm5 = Arima(Res, order = c(3, 0,2), include.mean = FALSE)
+# 
+# 
+# ##Blancheur des residues des different model
+# res1 = (Arm1$residuals)/(sqrt(Arm1$sigma2))
+# res2 = (Arm2$residuals)/(sqrt(Arm2$sigma2))
+# res3 = (Arm3$residuals)/(sqrt(Arm3$sigma2))
+# res4 = (Arm4$residuals)/(sqrt(Arm4$sigma2))
+# res5 =  (Arm5$residuals)/(sqrt(Arm5$sigma2))
+# 
+# Box.test(res1, lag = 1, type = c("Box-Pierce", "Ljung-Box")) #p-value > 0.05, on constate l'independence
+# Box.test(res2, lag = 1, type = c("Box-Pierce", "Ljung-Box")) #p-value > 0.05, on constate l'independence
+# Box.test(res3, lag = 1, type = c("Box-Pierce", "Ljung-Box"))
+# Box.test(res4, lag = 1, type = c("Box-Pierce", "Ljung-Box"))
+# Box.test(res5, lag = 1, type = c("Box-Pierce", "Ljung-Box"))
+# 
+# 
+# #acf des residues
+# pacf(res1)
+# acf(res1)  
+# #Normalit? des residuees: on verifie les 4 tests
+# hist(res2, breaks=sqrt(length(res2)))  #le hist
+# plot(res2, type="p")
+# abline(h=c(-1.96,1.96)) # on verifie que les point sont dans l'inter [-1.96, 1.96]
+# shapiro.test(res2[1:5000]) #p = 0.8801 nous indique 
+# qqnorm(res2)
+# plot(res2, type = 'l')
+# 
+# 
 
-# representation des signaux prives de leur tendance
-plot(SaisM1, type="l", xlab="t", ylab="Log Ventes sans tendance", col="red")
-lines(SaisM2, type="l", col="blue")
-lines(SaisM3, type="l", col="magenta")
-lines(SaisM4, type="l", col="forestgreen")
+## Choix definitif du modele.
+auto.arima(Res)  #Nous donne la bonne p = 4 et q= 3
 
-# le motif periodique est un vecteur de taille 12
-MotifM1 = rep(0, tau)
-MotifM2 = rep(0, tau)
-MotifM3 = rep(0, tau)
-MotifM4 = rep(0, tau)
+#Graphique du bruit et valeurs estimes 
+Arm1 = Arima(Res, order = c(4, 0,3), include.mean = FALSE)
+var(Arm1$fitted)
 
-# on moyennise toutes les periodes extraites des signaux
-for (k in 1:tau){
-  Extr = SaisM1[seq(k, n, by=tau)]
-  MotifM1[k] = mean(Extr)
-  Extr = SaisM2[seq(k, n, by=tau)]
-  MotifM2[k] = mean(Extr)
-  Extr = SaisM3[seq(k, n, by=tau)]
-  MotifM3[k] = mean(Extr)
-  Extr = SaisM4[seq(k, n, by=tau)]
-  MotifM4[k] = mean(Extr)
-}
 
-# on recentre le motif pour qu'il satisfasse la contrainte d'identifiabilite du modele
-MotifM1 = MotifM1 - mean(MotifM1)
-MotifM2 = MotifM2 - mean(MotifM2)
-MotifM3 = MotifM3 - mean(MotifM3)
-MotifM4 = MotifM4 - mean(MotifM4)
+plot(Arm1$fitted, type= 'l', col = 'green', main = 'Graphiques des mod?les', ylab = 'log Y')
+lines(Arm2$fitted,type = 'l',  col= 'red')
+lines(Arm5$fitted, type = 'l' , col= 'blue')
+lines(bruit, type= 'l')
 
-# representation des motifs periodiques estimes
-plot(MotifM1, type="l", xlab="t", ylab="Motif periodique", col="red")
-lines(MotifM2, type="l", col="blue")
-lines(MotifM3, type="l", col="magenta")
-lines(MotifM4, type="l", col="forestgreen")
 
-# estimation de la saisonnalite par duplication du motif
-EstSaisM1 = rep(MotifM1, n/tau)
-EstSaisM2 = rep(MotifM2, n/tau)
-EstSaisM3 = rep(MotifM3, n/tau)
-EstSaisM4 = rep(MotifM4, n/tau)
+#On modelise notre serie en utilisant les valeurs estim?e
 
-# superposition du signal et de la somme de la tendance et de la saisonnalite estimees
-plot(Conso, type="l", xlab="t", ylab="Log Ventes")
-lines(EstM1+EstSaisM1, type="l", col="red")
-lines(EstM2+EstSaisM2, type="l", col="blue")
-lines(EstM3+EstSaisM3, type="l", col="magenta")
-lines(EstM4+EstSaisM4, type="l", col="forestgreen")
+w = log(Conso)[13:8748]
+trend    = as.numeric(sx$trend)[13:8748]
+seasonal = as.numeric(sx$seasonal)[13:8748]
+bruit    = as.numeric(sx$random)[13:8748]
 
-# recuperation de la fluctuation residuelle
-ResM1 = Conso - EstM1 - EstSaisM1
-ResM2 = Conso - EstM2 - EstSaisM2
-ResM3 = Conso - EstM3 - EstSaisM3
-ResM4 = Conso - EstM4 - EstSaisM4
+#plot(Arm1$fitted, type= 'l', col = 'yellow')
+#lines(log(sncf$VK)[7:204], type = 'l')
 
-# calcul de l'erreur MSE commise lorsqu'on estime le signal par la somme de sa tendance et de sa saisonnalite
-MSEM1 = mean((ResM1)^2)
-MSEM2 = mean((ResM2)^2)
-MSEM3 = mean((ResM3)^2)
-MSEM4 = mean((ResM4)^2)
+acf( Arm1$fitted)
 
-# le modele M4 semble le meilleur, au sens de ce critere
-# au contraire, le modele M2 semble le moins bon, ce qui etait attendu (la droite est clairement moins adaptee que la parabole pour modeliser la tendance)
+#Modelisation de la serie logarithmic
+yest = trend + seasonal + Arm1$fitted
+y2 = trend + seasonal + Arm2$fitted
+y3 = trend +seasonal  + Arm5$fitted 
 
-# autocorrelations empiriques des residus pour detecter des correlations et/ou une saisonnalite non eliminee
-acf(ResM1, main="ACF empirique")
-acf(ResM2, main="ACF empirique") # presence de correlations ici, raison supplementaire pour rejeter le modele M2 par rapport aux autres
-acf(ResM3, main="ACF empirique")
-acf(ResM4, main="ACF empirique")
+#plot((yest), type="l", col="red")
+#lines(log(sncf$VK)[7:210], type = 'l')
 
-# on souhaite predire l'annee suivante
-NTps = (n+1):(n+tau)
-PredM1 = b0M1 + b1M1*NTps + b2M1*NTps^2 + MotifM1
-PredM2 = b0M2 + b1M2*NTps + MotifM2
-PredM3 = b0M3 + b1M3*NTps + b2M3*NTps^2 + MotifM3
-PredM4 = b0M4 + b1M4*NTps + b2M4*NTps^2 + MotifM4
 
-# representation du signal et de nos previsions par les 4 modeles
-plot(1:n, Conso, type="l", xlab="t", ylab="Log Ventes", xlim=c(1, n+tau))
-lines((n+1):(n+nsup), ResConso, type="l", col="black", lty=2) 
-lines(NTps, PredM1, type="l", col="red")
-lines(NTps, PredM2, type="l", col="blue")
-lines(NTps, PredM3, type="l", col="magenta")
-lines(NTps, PredM4, type="l", col="forestgreen")
+#Modelisation de notre serie
+yest = trend + seasonal + Arm1$fitted
+plot(exp(yest), xlim=c(1,96), type="l", col="red")
+lines(exp(y2), xlim=c(1,96), type="l", col="blue")
+lines(exp(y3), xlim=c(1,96), type="l", col="green")
+lines(Conso[13:8748], xlim=c(1,96), type = 'l')
 
-# representation du signal initial et de nos previsions par les 4 modeles
-plot(1:n, Conso, type="l", xlab="t", ylab="Ventes", xlim=c(1, n+tau))
-lines((n+1):(n+nsup), ResConso, type="l", col="black", lty=2) 
-lines(NTps, exp(PredM1), type="l", col="red")
-lines(NTps, exp(PredM2), type="l", col="blue")
-lines(NTps, exp(PredM3), type="l", col="magenta")
-lines(NTps, exp(PredM4), type="l", col="forestgreen")
+##############################################
+#Calcul de l'erreur 
+mase(exp(log(Conso)[13:8748]), yest)
+rmse( (Conso)[13:8748], exp(yest))
+rmse( (Conso)[13:8748], exp(y2))
+rmse( (Conso)[13:8748], exp(y3))
 
-# notre etude montre que la prevision par M4 semble la plus pertinente
+mape( (Conso)[13:8748], exp(yest))
+mape( (Conso)[13:8748], exp(y2))
+mape( (Conso)[13:8748], exp(y3))
 
-# remarque : on verra dans la suite du cours qu'il n'est pas necessairement pertinent de predire exp(Conso) par exp(Prediction)
+ytrain = log(Conso)[13:8748]
+a = 0.05
+upper <- trend + seasonal + fitted(Arm1) + qnorm(1-a/2)*sqrt(Arm1$sigma2)
+lower <- trend + seasonal + fitted(Arm1) - qnorm(1-a/2)*sqrt(Arm1$sigma2)
 
-# on illustre pour conclure l'application de la procedure "decompose" qui realise la modelisation additive
-ConsoTS = ts(Conso, frequency=tau)
-Decomp = decompose(ConsoTS)
-plot(Decomp)
+plot(exp(ytrain), type="l", ylim=c(min(exp(lower)),max(exp(upper))))
+polygon(c(time(exp(ytrain)),rev(time(exp(ytrain)))), c(exp(upper),rev(exp(lower))), 
+        col=rgb(0,0,0.6,0.2), border=FALSE)
+lines(exp(yest), type="l", col="red")
+#lines(exp(y2), type="l", col="blue")
+#lines(exp(y3), type="l", col="green")
+#lines((sncf$VK)[7:210], type = 'l')
 
-# comparaison entre le motif periodique issu de "decompose" et celui de notre meilleur modele
-plot(Decomp$figure, xlab="t", ylab="Motif periodique", type="l")
-lines(MotifM4, col="forestgreen")
 
-# plus rapide ?
-# par contre, R n'estime pas la tendance : donc, pas de prediction !
+
+
+##########################################################################################
+#Le modele SARIMA
+##########################################################################################
+
+#1###Stationarisation de la serie.
+Z_t = y 
+plot(y, type = 'l') #on demontre que la serie n'est pas stationnaire(presence d'une tendance)
+#On de V_t la serie VK et on travaille avec Z = log(V_t)
+acf(Z_t, lag = 72, ylim=c(-1,1)) #on constate que la serie n'est pas un bruit blanc et il y 
+#plusieurs correlations et elle n'est pas stationnaire.
+
+y_dif1=diff(y,lag=24)#on effectue une differenciation (I-B)
+adf.test(y_dif1)
+kpss.test(y_dif1)
+plot(y_dif1, type = 'l')# visuellement presence d'une saisonalit?
+plot(acf(y_dif1,lag =72,ylim=c(-1,1))) #y_diff1 est correle avec une periode de 12
+
+y_diff2 = diff(y_dif1, lag =1)
+plot(acf(y_diff2,lag =72,ylim=c(-1,1)))
+adf.test(y_diff2)
+kpss.test(y_diff2)
+plot(y_diff2, type = 'l')
+
+#on estime SARIMA(1,1,1)(1,1,1)_12
+
+mod1=Arima(y,order=c(3,1,0),list(order=c(1,1,0),period=24), include.drift = FALSE)
+mod1$coef/sqrt(diag(mod1$var.coef)) 
+
+#on verifie si les residues sont les bruits blancs:
+Box.test(mod1$residuals,lag= 3,type="Ljung-Box")
+resid1 = (mod1$residuals)/(sqrt(mod1$sigma2))
+hist(resid1, breaks=sqrt(length(resid1)))  
+plot(resid1, type="p")
+abline(h=c(-1.96,1.96)) 
+shapiro.test(resid1[1:5000]) 
+qqnorm(resid1)
+abline(0, 1)
+plot(resid1, type = 'l')
+
+
+
+mod2=Arima(y,order=c(0,1,1),list(order=c(0,1,0),period=24),include.mean=FALSE, include.drift = FALSE)
+mod2$coef/sqrt(diag(mod2$var.coef))
+Box.test(mod2$residuals,lag= 3,type="Ljung-Box")
+resid2 = (mod2$residuals)/(sqrt(mod2$sigma2))
+hist(resid2, breaks=sqrt(length(resid2)))  #le hist
+plot(resid2, type="p")
+abline(h=c(-1.96,1.96))
+# on verifie que les point sont dans l'inter [-1.96, 1.96]
+shapiro.test(resid2[1:5000]) 
+qqnorm(resid2)
+abline(0, 1)
+plot(resid2, type = 'l')
+
+
+
+model3 =Arima(y,order=c(2,1,2),list(order=c(1,1,1),period=24),include.mean=FALSE, include.drift = FALSE)
+summary(model3) #valeur Aic -634.35
+model3$coef/sqrt(diag(model3$var.coef))#on constate que les coef sont tous signicatifs.
+Box.test(model3$residuals,lag= 3,type="Ljung-Box") #les residues sont bruit blancs
+resid3 = (model3$residuals)/(sqrt(model3$sigma2))
+hist(resid3, breaks=sqrt(length(resid3)))  #le hist
+plot(resid3, type="p")
+abline(h=c(-1.96,1.96)) # on verifie que les point sont dans l'inter [-1.96, 1.96]
+shapiro.test(resid3[1:5000]) 
+qqnorm(resid3)
+abline(0, 1)
+
+
+
+
+model4=Arima(y,order=c(1,1,1),list(order=c(1,1,1),period=24),include.mean=FALSE, include.drift = FALSE)
+model4$coef/sqrt(diag(model4$var.coef))
+Box.test(model4$residuals,lag= 3,type="Ljung-Box")
+resid4 = (model4$residuals)/(sqrt(model4$sigma2))
+hist(resid4, breaks=sqrt(length(resid1)))  
+plot(resid4, type="p")
+abline(h=c(-1.96,1.96)) # on verifie que les point sont dans l'inter [-1.96, 1.96]
+shapiro.test(resid4) #p = 0.8801 nous indique 
+qqnorm(resid4)
+abline(0, 1)
+plot(resid4, type = 'l')
+
+
+
+#graphique de model$fitted
+model1=Arima(y,order=c(1,1,1),list(order=c(0,1,1),period=12),include.mean=FALSE, include.drift = FALSE)
+model2=Arima(y,order=c(0,1,2),list(order=c(1,1,0),period=12),include.mean=FALSE, include.drift = FALSE)
+model3=Arima(y,order=c(3,1,0),list(order=c(0,1,1),period=12),include.mean=FALSE, include.drift = FALSE)
+
+#plot(serie, type = 'l', col = 'black')
+
+plot(exp(model1$fitted), type="l", col="green", xlab = "temps", ylab = "Nbre de voyageurs", main = "Approximations de X_t")
+lines(exp(model2$fitted), type="l", col="red")
+
+lines(exp(model3$fitted), type="l", col="blue")
+lines((Conso), type = 'l')
+
+
+
+
+
+
+
+
+#######################################################################################
+#Prevision 
+####################################################################################### 
+y=LConso
+#on choisit la serie qui minimise l'erreur 
+model1=Arima(y,order=c(1,1,1),list(order=c(0,1,1),period=24))
+model2=Arima(y,order=c(0,1,2),list(order=c(1,1,0),period=24))
+model3=Arima(y,order=c(3,1,0),list(order=c(0,1,1),period=24))
+
+serie =  Conso
+se_tron   = serie[1:8424]
+serie_test = serie[8425:8760]
+lse_tron = log(se_tron)[1:8424]
+lotest  = log(Conso)[8425:8760]
+
+model1_tron =  Arima(lse_tron,order=c(1,1,1),list(order=c(0,1,1),period=24))
+model2_tron  =  Arima(lse_tron,order=c(0,1,2),list(order=c(1,1,0),period=24))
+model3_tron =  Arima(lse_tron,order=c(3,1,0),list(order=c(0,1,1),period=24))
+
+
+pred_model1 = forecast(model1_tron, h =336, level = c(0.80, 0.95))
+pred_model2 = forecast(model2_tron, h =336, level = c(0.95, 0.80))
+pred_model3 = forecast(model3_tron, h =336, level = c(0.95, 080))
+
+pred_mo1  =  exp(pred_model1$mean)*exp((model1_tron$sigma2)/2)
+pred_mo2  =  exp(pred_model2$mean)*exp((model2_tron$sigma2)/2)
+pred_mo3  =  exp(pred_model3$mean)*exp((model3_tron$sigma2)/2)
+
+predm1 =  exp(pred_model1$mean)
+predm2 =  exp(pred_model2$mean)
+predm3 =  exp(pred_model3$mean)
+
+
+err_model1 = mape(serie_test, pred_mo1)
+err_model2 = mape(serie_test, pred_mo2)
+err_model3 = mape(serie_test, pred_mo3)
+
+err_m1 = mape(serie_test, predm1)
+err_m2 = mape(serie_test, predm2)
+err_m3 = mape(serie_test, predm3)
+
+
+
+#Graphique de la prediction pour la serie logarithmique
+plot(pred_model3)
+low = pred_model3$lower
+upp = pred_model3$upper
+
+
+
+#Prediction sans l'intervalle de confiance
+plot(se_tron, type = 'l' , xlim = c(0, 8760))
+lines(8425:8760, pred, type = 'l', col = 'blue')
+lines(8425:8760, serie_test, type = 'l', col = 'black')
+lines(serie, type = 'l', col = 'red')
+
+
+
+#########################################################################################
+seritronc = serie[1:8424]
+serit <-ts(seritronc)
+pred_model3=forecast(model3_tron,h=24,level=95)
+pred = exp(pred_model3$mean)
+pred_l=ts(exp(pred_model3$lower),start= c(205,1), frequency=1)
+
+pred_u=ts(exp(pred_model3$upper),start= c(205, 1),frequency=1)
+
+ts.plot(serit,pred,pred_l,pred_u,xlab="t",ylab="Voyageurs",col=c(1,2,3,3),lty=c(1,1,2,2),lwd=c(1,3,2,2))
+legend("topleft",legend=c("X","X_prev"),col=c(1,2,3,3),lty=c(1,1),lwd=c(3,3))
+legend("topright",legend=c("int95%_inf","int95%_sup"),col=c(3,3),lty=c(2,2),lwd=c(2,2))
+
+
+
+
+
+#############################################################################################
+ori_serie = serie[1:216]
+ts_or <-ts(ori_serie)
+x_tronc=window(ts_or,end=c(204,1))
+y_tronc=log(x_tronc)
+x_a_prevoir=window(ts_or,start=c(205,1))
+model3tronc =  Arima(y_tronc,order=c(3,1,0),list(order=c(0,1,1),period=12))
+summary(model3tronc)
+
+
+pred_model3tronc=forecast(model3tronc,h=24,level=95)
+pred_tronc=exp(pred_model3tronc$mean)
+pred_l_tronc=ts(exp(pred_model3tronc$lower),start=c(205,1),frequency=1)
+pred_u_tronc=ts(exp(pred_model3tronc$upper),start=c(205,1),frequency=1)
+ts.plot(x_a_prevoir,pred_tronc,pred_l_tronc,pred_u_tronc,xlab="t",ylab="Airpass",col=c(1,2,3,3),lty=c(1,1,2,2),lwd=c(3,3,2,2))
+legend("topleft",legend=c("X","X_prev"),col=c(1,2,3,3),lty=c(1,1),lwd=c(3,3))
+legend("topright",legend=c("int95%_inf","int95%_sup"),col=c(3,3),lty=c(2,2),lwd=c(2,2))
+
+############################################################################################################

@@ -1,10 +1,11 @@
-#On visualizer les donne
-library(tseries)
-library(forecast)
-library(Metrics)
-library(ftsa)
-library(dLagM)
-library(statsr)
+# quelques outils (tests ADF/KPSS, auto.arima, ...)
+library("aTSA")
+library("forecast")
+library("tseries")
+library("Metrics")
+library("ftsa")
+library("dLagM")
+library("statsr")
 
 ##Lecture du fichier à partir de import Dataset
 serie = sncf$VK
@@ -68,6 +69,7 @@ Arm2$coef
 Arm3$coef
 Arm4$coef
 Arm5$coef
+
 ### Verification des modeles potentiels:
 Arm1$coef/sqrt(diag(Arm1$var.coef))  
 Arm2$coef/sqrt(diag(Arm2$var.coef))
@@ -297,7 +299,8 @@ lotest  = log(sncf$VK)[205:216]
 model1_tron =  Arima(lse_tron,order=c(1,1,1),list(order=c(0,1,1),period=12))
 model2_tron  =  Arima(lse_tron,order=c(0,1,2),list(order=c(1,1,0),period=12))
 model3_tron =  Arima(lse_tron,order=c(3,1,0),list(order=c(0,1,1),period=12))
-pred_model1 = forecast(model1_tron, h =12, level = c(0.95, 0.80))
+
+pred_model1 = forecast.Arima(model1_tron, h =12, level = c(0.95, 0.80))
 pred_model2 = forecast(model2_tron, h =12, level = c(0.95, 0.80))
 pred_model3 = forecast(model3_tron, h =12, level = c(0.95, 080))
 

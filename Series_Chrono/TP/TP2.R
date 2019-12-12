@@ -4,7 +4,7 @@ library("aTSA")
 library("forecast")
 
 # ouverture du fichier
-Strates = read.csv("/users/mmath/wade/Bureau/Projets/Projets/Series_Chrono/TP/strates.txt")$Strates
+Strates = read.csv("strates.txt")$Strates
 n = length(Strates)
 
 # aspect visuel : transformation necessaire
@@ -202,3 +202,4 @@ print(paste("MSE de la reconstruction avec le modele ARMA(1,2) sur les residus =
 print(paste("MSE de la reconstruction avec le modele ARMA(4,3) sur les residus = ", MSE43))
 # au sens de ce critere, on aurait tendance a preferer in fine le modele tendance sinusoidale+ARMA(4,3) sur le residu
 # on pourrait evidemment continuer a creuser avec d'autres modelisations sur les residus...
+
